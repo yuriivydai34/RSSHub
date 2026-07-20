@@ -7,11 +7,16 @@ import ofetch from '@/utils/ofetch';
 import { parseDate } from '@/utils/parse-date';
 
 export const route: Route = {
-    path: '/parse',
+    // RSSHub's cache middleware keys purely on path + limit (see lib/middleware/cache.ts) and
+    // ignores query params entirely, so a ?url= query param here made every sitemap on this
+    // instance (AIG, AMCR, ...) share ONE cache entry — whichever was fetched first "won" and
+    // got served to all of them. Base64url-encoding the target URL into the path itself gives
+    // each target its own cache key, same trick as ../sitemap-news.
+    path: '/parse/:encodedUrl',
     categories: ['finance'],
-    example: '/news-sitemap/parse?url=https://www.aig.com/news-sitemap.xml',
+    example: '/news-sitemap/parse/aHR0cHM6Ly93d3cuYWlnLmNvbS9uZXdzLXNpdGVtYXAueG1s',
     parameters: {
-        url: 'Full URL of a sitemap using the Google News Sitemap extension (xmlns:news, per sitemaps.org)',
+        encodedUrl: 'Base64url (no padding) of the full sitemap URL, using the Google News Sitemap extension (xmlns:news, per sitemaps.org)',
     },
     features: {
         requireConfig: [
@@ -41,10 +46,11 @@ async function handler(ctx) {
         throw new ConfigNotFoundError(`This route is disabled unless 'ALLOW_USER_SUPPLY_UNSAFE_DOMAIN' is set to 'true'.`);
     }
 
-    const sitemapUrl = ctx.req.query('url');
-    if (!sitemapUrl) {
-        throw new Error('Missing required "url" query parameter');
+    const encodedUrl = ctx.req.param('encodedUrl');
+    if (!encodedUrl) {
+        throw new Error('Missing required "encodedUrl" path parameter');
     }
+    const sitemapUrl = Buffer.from(encodedUrl, 'base64url').toString('utf8');
 
     const xml = await ofetch(sitemapUrl);
     const $ = load(xml, { xmlMode: true });
